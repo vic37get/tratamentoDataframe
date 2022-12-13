@@ -65,7 +65,8 @@ class WesBertModel(nn.Module):
             lista.append(torch.stack(cada))
         return(torch.stack(lista))
 
-def retorna_embeds(dataf):
+def retorna_embeds(dataf, id_process):
+    print('PROCESSOOOOOOOOOOO ', id_process)
     tokenizador = BertTokenizer.from_pretrained('./tokenizer-light')
     tokenize=wrap_tokenizer(tokenizador)
     model = WesBertModel(len(tokenizador))
@@ -78,14 +79,34 @@ def retorna_embeds(dataf):
         item['embeddings']=pooled_emb
         listdf.append(item)
     novodf=pd.DataFrame(listdf)
-    novodf.to_pickle('../Datasets/multilabel-habilitacao-embeddings-.pkl')
+    novodf.to_pickle('../Datasets/multilabel-habilitacao-embeddings-{}.pkl'.format(id_process))
+
+def executaEmbeddings(id_process, NUM_THREADS, multilabel):
+    quantidade_thread = len(multilabel)//NUM_THREADS
+    #print(quantidade_thread)
+    limite_superior = quantidade_thread*id_process
+    limite_inferior = limite_superior-quantidade_thread
+    #print(multilabel[limite_inferior:limite_superior])
+    if id_process == NUM_THREADS:
+        range_thread = multilabel[limite_inferior:]
+    else:
+        range_thread = multilabel[limite_inferior:limite_superior]
+    #Estrategia para particionar um numero
+    range_thread = range_thread.sample(n=5, ignore_index=True)
+    range_thread.Text = range_thread.Text.apply(lambda x: get_text_split(x))
+    range_thread['n_chunks'] = range_thread.Text.apply(lambda x: len(x))
+    range_thread['embeddings']=np.nan
+    retorna_embeds(range_thread, id_process)
+
+
+NUM_THREADS = 4
+threads_criadas = []
+multilabel=pd.read_csv('../Datasets/multilabel-habilitacao.csv')
+multilabel.rename(columns={'text':'Text','classe':'Label'},inplace=True)
 
 start = timer() 
-NUM_THREADS = 24
-threads_criadas = []
-
 for id_th in range(1,NUM_THREADS+1):
-    nova_thread = multiprocessing.Process(target=self.all,args=(id_th,NUM_THREADS,nomes))
+    nova_thread = multiprocessing.Process(target=executaEmbeddings,args=(id_th, NUM_THREADS, multilabel))
     threads_criadas.append(nova_thread)
     nova_thread.start()
 
@@ -94,28 +115,3 @@ for td in threads_criadas:
 
 end = timer()
 print("Tempo total de processamento: ",end - start)
-
-def uneCsv():
-    dataframes = []
-    for arquivo in os.listdir():
-        if arquivo.find('Dataframe') != -1:
-            try:
-                df_aux = pd.read_csv(arquivo, encoding=('utf-8'))
-                dataframes.append(df_aux)
-            except:
-                continue
-    df = pd.concat(dataframes, axis=0)
-    df.to_csv('DFCompleto.csv', index=False)
-
-multilabel=pd.read_csv('../Datasets/multilabel-habilitacao.csv')
-multilabel.rename(columns={'text':'Text','classe':'Label'},inplace=True)
-
-uneCsv()
-
-#Estrategia para particionar um numero
-multilabel=multilabel.sample(n=100,ignore_index=True)
-
-multilabel.Text = multilabel.Text.apply(lambda x: get_text_split(x))
-multilabel['n_chunks'] = multilabel.Text.apply(lambda x: len(x))
-multilabel['embeddings']=np.nan
-retorna_embeds(multilabel)
